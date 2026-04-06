@@ -90,7 +90,7 @@ When QoS >= 1, the peer MUST also advertise its supported hash algorithms:
 
 ```
 Property name:  "X-QoS-Hash"
-Property value: ASCII string of algorithm identifiers in preference order (e.g. "xsXS")
+Property value: ASCII string of algorithm identifiers in preference order (e.g. "xs")
 ```
 
 Each character identifies one algorithm (see [Hash algorithm registry](#hash-algorithm-registry)).
@@ -164,8 +164,8 @@ The first byte of the command data selects the hash algorithm:
 | `s`    | SHA-1 truncated | 8 bytes     | Universally available in standard libraries. |
 
 Both algorithms produce 8-byte (64-bit) digests. Collision probability
-within the in-flight window is approximately N²/2⁶⁵ where N is the
-number of un-ACK'd messages — negligible for any realistic HWM.
+within the in-flight window is approximately N^2/2^65 where N is the
+number of un-ACK'd messages -- negligible for any realistic HWM.
 
 Future specifications MAY define additional algorithm prefixes with
 different digest sizes. The digest size is determined by the algorithm
@@ -179,7 +179,8 @@ environments where only standard library hashing is available.
 ### Hash input
 
 The hash digest MUST be computed over the **raw ZMTP wire bytes** of the
-message, as produced by encoding each frame with its flags and size header.
+message (after decryption, if an encrypted transport mechanism is in use),
+as produced by encoding each frame with its flags and size header.
 This means frame boundaries are part of the digest.
 
 Specifically, for a message with parts `[P0, P1, ..., Pn]`, the hash input is
@@ -225,12 +226,9 @@ No change from standard behavior.
 
 **Sender (PUSH/SCATTER):**
 
-1. After sending a message, the sender computes its hash and stores the
-   message in a **pending store** keyed by digest.
-2. The sender starts an **ACK listener** task per connection. This task calls
-   `receive_message` with a block that intercepts ACK command frames. (On
-   write-only sockets, `receive_message` blocks indefinitely — the block is
-   only invoked for command frames.)
+1. Before sending a message, the sender computes its hash and stores the
+   message in a **pending store** keyed by digest, then sends the message.
+2. The sender MUST listen for incoming ACK command frames on each connection.
 3. When an ACK is received, the sender removes the matching entry from the
    pending store.
 4. When a connection is lost, the sender MUST re-enqueue all pending messages
