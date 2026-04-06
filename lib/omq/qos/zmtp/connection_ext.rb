@@ -18,11 +18,10 @@ module OMQ
       end
 
       # Returns true if the ZMTP mechanism encrypts at the frame level
-      # (e.g. CURVE). TLS encryption is below ZMTP and does not affect
-      # wire-format bytes.
+      # (e.g. CURVE, BLAKE3ZMQ).
       #
       # @return [Boolean]
-      def curve?
+      def encrypted?
         @mechanism.encrypted?
       end
     end
