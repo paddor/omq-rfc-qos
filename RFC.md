@@ -10,7 +10,7 @@
 and may change in incompatible ways. Implementors should expect revisions.
 
 This specification defines per-hop delivery guarantees for ZMTP 3.1
-connections, using ACK/NACK command frames and xxHash-based message
+connections, using ACK/NACK command frames and hash digest-based message
 identification.
 
 ## License
