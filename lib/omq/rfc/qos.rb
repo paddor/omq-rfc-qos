@@ -4,7 +4,7 @@
 #
 # Usage:
 #   require "omq"
-#   require "omq/qos"
+#   require "omq/rfc/qos"
 #
 #   push = OMQ::PUSH.new
 #   push.qos = 1

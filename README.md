@@ -1,7 +1,7 @@
 # OMQ::QoS -- Delivery Guarantees for OMQ
 
-[![CI](https://github.com/paddor/omq-qos/actions/workflows/ci.yml/badge.svg)](https://github.com/paddor/omq-qos/actions/workflows/ci.yml)
-[![Gem Version](https://img.shields.io/gem/v/omq-qos?color=e9573f)](https://rubygems.org/gems/omq-qos)
+[![CI](https://github.com/paddor/omq-rfc-qos/actions/workflows/ci.yml/badge.svg)](https://github.com/paddor/omq-rfc-qos/actions/workflows/ci.yml)
+[![Gem Version](https://img.shields.io/gem/v/omq-rfc-qos?color=e9573f)](https://rubygems.org/gems/omq-rfc-qos)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](LICENSE)
 [![Ruby](https://img.shields.io/badge/Ruby-%3E%3D%203.3-CC342D?logo=ruby&logoColor=white)](https://www.ruby-lang.org)
 
@@ -11,7 +11,7 @@ xxHash message identification.
 
 ```ruby
 require "omq"
-require "omq/qos"
+require "omq/rfc/qos"
 
 push = OMQ::PUSH.new(nil, qos: 1)
 push.connect("tcp://worker-1:5555")
@@ -29,7 +29,7 @@ push << "reliably delivered"
 
 ## How it works
 
-`require "omq/qos"` prepends onto OMQ routing strategies. No
+`require "omq/rfc/qos"` prepends onto OMQ routing strategies. No
 monkey-patching of core send/receive paths — the prepends activate only
 when `qos >= 1`:
 

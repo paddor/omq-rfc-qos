@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "minitest/autorun"
-require "omq/qos"
+require "omq/rfc/qos"
 require "async"
 
 require "console"

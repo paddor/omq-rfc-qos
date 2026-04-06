@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
-require_relative "lib/omq/qos/version"
+require_relative "lib/omq/rfc/qos/version"
 
 Gem::Specification.new do |s|
-  s.name     = "omq-qos"
+  s.name     = "omq-rfc-qos"
   s.version  = OMQ::QoS::VERSION
   s.authors  = ["Patrik Wenger"]
   s.email    = ["paddor@gmail.com"]
@@ -11,7 +11,7 @@ Gem::Specification.new do |s|
   s.description = "Quality of Service plugin for the OMQ pure-Ruby ZeroMQ library. " \
                   "Adds per-hop delivery guarantees (QoS 1: at-least-once) using " \
                   "ACK/NACK command frames and xxHash message identification."
-  s.homepage = "https://github.com/paddor/omq-qos"
+  s.homepage = "https://github.com/paddor/omq-rfc-qos"
   s.license  = "ISC"
 
   s.required_ruby_version = ">= 3.3"
