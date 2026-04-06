@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 — 2026-04-07
 
 - YARD documentation on all public methods and classes.
 - Code style: expand `else X` one-liners, two blank lines between methods
