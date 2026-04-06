@@ -16,6 +16,7 @@ module OMQ
     DEFAULT_HASH_ALGO    = "x".freeze
     HASH_SIZE            = 8
 
+
     # Computes an 8-byte digest over raw ZMTP wire bytes.
     #
     # @param parts [Array<String>] message frames
@@ -25,11 +26,15 @@ module OMQ
     def self.digest(parts, algorithm: DEFAULT_HASH_ALGO)
       wire = Protocol::ZMTP::Codec::Frame.encode_message(parts)
       case algorithm
-      when "x" then [XXhash.xxh64(wire)].pack("Q<")
-      when "s" then Digest::SHA1.digest(wire).byteslice(0, 8)
-      else raise ArgumentError, "unsupported QoS hash algorithm: #{algorithm.inspect}"
+      when "x"
+        [XXhash.xxh64(wire)].pack("Q<")
+      when "s"
+        Digest::SHA1.digest(wire).byteslice(0, 8)
+      else
+        raise ArgumentError, "unsupported QoS hash algorithm: #{algorithm.inspect}"
       end
     end
+
 
     # Negotiates the hash algorithm for a connection.
     # Returns the first algo in our preference list that the peer supports.
@@ -44,6 +49,7 @@ module OMQ
       end
       nil
     end
+
 
     # Builds an ACK command for the given message.
     #

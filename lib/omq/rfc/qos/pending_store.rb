@@ -9,9 +9,11 @@ module OMQ
     class PendingStore
       Entry = Data.define(:parts, :connection, :sent_at)
 
+      # Creates a new empty pending store.
       def initialize
         @entries = {}
       end
+
 
       # Registers a message as pending.
       #
@@ -27,6 +29,7 @@ module OMQ
         )
       end
 
+
       # Acknowledges a message. Returns the entry or nil if unknown.
       #
       # @param hash [String] 8-byte digest
@@ -35,6 +38,7 @@ module OMQ
       def ack(hash)
         @entries.delete(hash)
       end
+
 
       # Returns and removes all pending entries for a connection.
       #
@@ -52,11 +56,13 @@ module OMQ
         removed
       end
 
+
       # @return [Integer] number of pending messages
       #
       def size
         @entries.size
       end
+
 
       # @return [Boolean]
       #

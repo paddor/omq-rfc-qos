@@ -6,6 +6,9 @@ module OMQ
     # For ZMTP connections: use peer's preference list.
     # For inproc DirectPipe: use our own (same process).
     #
+    # @param connection [Connection] the connection to negotiate for
+    # @param engine [Engine] the owning engine (unused, reserved)
+    # @return [String] single-char algorithm identifier
     def self.algo_for(connection, engine)
       if connection.respond_to?(:peer_qos_hash)
         negotiate_hash(connection.peer_qos_hash) || DEFAULT_HASH_ALGO
@@ -27,14 +30,17 @@ module OMQ
         @conn_algos    = {}
       end
 
+
       def pending_store
         return @pending_store if @pending_store
         @pending_store = PendingStore.new if @engine.options.qos >= 1
       end
 
+
       def algo_for(conn)
         @conn_algos[conn] ||= QoS.algo_for(conn, @engine)
       end
+
 
       def update_direct_pipe
         if pending_store
@@ -43,6 +49,7 @@ module OMQ
           super
         end
       end
+
 
       def send_with_retry(parts)
         conn       = next_connection
@@ -53,6 +60,7 @@ module OMQ
         @engine.connection_lost(conn)
         retry
       end
+
 
       def send_batch(batch)
         ps            = pending_store
@@ -92,6 +100,7 @@ module OMQ
     # Prepended onto Routing::Push to start an ACK listener at QoS >= 1.
     #
     module PushExt
+      # @param connection [Connection]
       def connection_added(connection)
         @connections << connection
         signal_connection_available
@@ -126,6 +135,7 @@ module OMQ
     # Prepended onto Routing::Pull to send ACK after receive at QoS >= 1.
     #
     module PullExt
+      # @param connection [Connection]
       def connection_added(connection)
         if @engine.options.qos >= 1
           algo = QoS.algo_for(connection, @engine) # negotiated hash family
@@ -144,6 +154,7 @@ module OMQ
     # Prepended onto Routing::Scatter — same pattern as Push.
     #
     module ScatterExt
+      # @param connection [Connection]
       def connection_added(connection)
         @connections << connection
         signal_connection_available
@@ -178,6 +189,7 @@ module OMQ
     # Prepended onto Routing::Gather — same pattern as Pull.
     #
     module GatherExt
+      # @param connection [Connection]
       def connection_added(connection)
         if @engine.options.qos >= 1
           algo = QoS.algo_for(connection, @engine) # negotiated hash family
@@ -203,10 +215,12 @@ module OMQ
         @pending_store = nil
       end
 
+
       def pending_store
         return @pending_store if @pending_store
         @pending_store = PendingStore.new if @engine.options.qos >= 1
       end
+
 
       def start_subscription_listener(conn)
         @tasks << @engine.spawn_pump_task(annotation: "subscription listener") do
@@ -215,9 +229,12 @@ module OMQ
             next unless frame.command?
             cmd = Protocol::ZMTP::Codec::Command.from_body(frame.body)
             case cmd.name
-            when "SUBSCRIBE" then on_subscribe(conn, cmd.data)
-            when "CANCEL"    then on_cancel(conn, cmd.data)
-            when "ACK"       then pending_store&.ack(cmd.ack_data[1])
+            when "SUBSCRIBE"
+              on_subscribe(conn, cmd.data)
+            when "CANCEL"
+              on_cancel(conn, cmd.data)
+            when "ACK"
+              pending_store&.ack(cmd.ack_data[1])
             end
           end
         rescue *CONNECTION_LOST
@@ -230,6 +247,7 @@ module OMQ
     # Prepended onto Routing::Sub to send ACK at QoS >= 1.
     #
     module SubExt
+      # @param connection [Connection]
       def connection_added(connection)
         @connections << connection
         @subscriptions.each do |prefix|
@@ -252,6 +270,7 @@ module OMQ
     # Prepended onto Routing::XSub to send ACK at QoS >= 1.
     #
     module XSubExt
+      # @param connection [Connection]
       def connection_added(connection)
         @connections << connection
         if @engine.options.qos >= 1
@@ -272,6 +291,7 @@ module OMQ
     # Prepended onto Routing::Dish to send ACK at QoS >= 1.
     #
     module DishExt
+      # @param connection [Connection]
       def connection_added(connection)
         @connections << connection
         @groups.each do |group|
@@ -294,6 +314,7 @@ module OMQ
     # Prepended onto Routing::Req to stash pending request for QoS 1 retry.
     #
     module ReqExt
+      # @param connection [Connection]
       def connection_removed(connection)
         super
         if @engine.options.qos >= 1 && @state == :waiting_reply && @pending_request
@@ -303,6 +324,8 @@ module OMQ
         end
       end
 
+
+      # @param parts [Array<String>]
       def enqueue(parts)
         @pending_request = parts if @engine.options.qos >= 1
         super

@@ -36,6 +36,7 @@ module OMQ
         raise
       end
 
+
       def validate_qos!(conn, endpoint)
         local_qos = @options.qos
         peer_qos  = conn.peer_qos

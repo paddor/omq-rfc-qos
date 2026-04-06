@@ -5,6 +5,9 @@ module OMQ
     # Prepended onto OMQ::Options to add the +qos_hash+ attribute.
     #
     module OptionsExt
+      # Initializes options with the default QoS hash algorithm preference.
+      #
+      # @param kwargs [Hash] forwarded to the original +Options#initialize+
       def initialize(**kwargs)
         super
         @qos_hash = OMQ::QoS::SUPPORTED_HASH_ALGOS

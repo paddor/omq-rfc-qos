@@ -14,6 +14,7 @@ module OMQ
         new("ACK", "#{algorithm}#{hash_bytes}".b)
       end
 
+
       # Builds a NACK command.
       #
       # @param hash_bytes [String] binary hash digest
@@ -23,6 +24,7 @@ module OMQ
         new("NACK", "#{algorithm}#{hash_bytes}#{error}".b)
       end
     end
+
 
     # Prepended onto Protocol::ZMTP::Codec::Command to add
     # ACK/NACK data extraction methods.
@@ -37,6 +39,7 @@ module OMQ
         [algo, @data.byteslice(1, hash_size)]
       end
 
+
       # Extracts algorithm, hash bytes, and error info from a NACK command's data.
       #
       # @return [Array(String, String, String)] [algorithm, hash_bytes, error_info]
@@ -50,6 +53,7 @@ module OMQ
     end
   end
 end
+
 
 # Known hash digest sizes by algorithm prefix.
 Protocol::ZMTP::Codec::Command::ACK_HASH_SIZES = { "x" => 8, "s" => 8 }.freeze
