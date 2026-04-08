@@ -46,7 +46,7 @@ intermediaries (brokers, proxies).
   no tracking, no hash computation.
 * **Per-hop, not end-to-end.** Each connection independently enforces its QoS
   level. Multi-hop guarantees require each hop to use QoS.
-* **Hash-based identification.** Messages are identified by their xxHash digest
+* **Hash-based identification.** Messages are identified by their XXH64 digest
   rather than sequence numbers. This avoids per-connection state for ID
   allocation and simplifies fan-out patterns.
 * **Command-frame ACK/NACK.** Acknowledgments are ZMTP command frames, invisible
@@ -54,20 +54,14 @@ intermediaries (brokers, proxies).
 
 ## QoS Levels
 
-| Level | Name           | Guarantee                                     |
-|-------|----------------|-----------------------------------------------|
-| 0     | Fire-and-forget | None (standard ZMQ behavior)                 |
-| 1     | At-least-once  | Sender retries until ACK received             |
+| Level | Name                     | Guarantee                                                  |
+|-------|--------------------------|------------------------------------------------------------|
+| 0     | Fire-and-forget          | None (standard ZMQ behavior)                               |
+| 1     | At-least-once            | Sender retries until ACK received                          |
+| 2     | Exactly-once             | Like 1, but sender pins to connection — no failover        |
+| 3     | Exactly-once + processed | Like 2, plus application-level COMP/NACK on success/error  |
 
-### Future levels (not specified here)
-
-| Level | Name                | Guarantee                                   |
-|-------|---------------------|---------------------------------------------|
-| 2     | Exactly-once        | Sender sticks to one connection, no failover |
-| 3     | Exactly-once + processed | Like 2, plus application-level NACK on error |
-
-QoS 2 and 3 are reserved for future specification. Implementations MUST reject
-QoS values outside the range they support.
+Implementations MUST reject QoS values outside the range they support.
 
 ## Handshake
 
@@ -84,18 +78,6 @@ Property value: ASCII decimal string ("0", "1", "2", "3")
 When QoS is 0 (the default), the X-QoS property SHOULD be omitted to avoid
 overhead. If absent, a peer's QoS level MUST be assumed to be 0.
 
-### X-QoS-Hash READY Property
-
-When QoS >= 1, the peer MUST also advertise its supported hash algorithms:
-
-```
-Property name:  "X-QoS-Hash"
-Property value: ASCII string of algorithm identifiers in preference order (e.g. "xs")
-```
-
-Each character identifies one algorithm (see [Hash algorithm registry](#hash-algorithm-registry)).
-The first character is the most preferred.
-
 ### QoS level matching
 
 Both peers MUST advertise the same QoS level. If a peer receives a READY (or
@@ -106,19 +88,21 @@ Rationale: silent degradation masks configuration errors and violates the
 application's delivery expectations. A PUSH socket configured for at-least-once
 delivery that silently drops to fire-and-forget defeats the purpose of QoS.
 
-### Hash algorithm negotiation
+### Peer identity (QoS >= 2)
 
-Both peers send their supported algorithms in preference order via
-`X-QoS-Hash`. The **effective algorithm** for the connection is determined by
-the **sender's** preference list: the first algorithm in the sender's
-`X-QoS-Hash` that also appears in the receiver's `X-QoS-Hash`.
+At QoS >= 2, peers MUST be identifiable across reconnects so that the sender
+can distinguish "reconnect to the same peer" from "connect to a new peer."
 
-If there is no overlap, the peer that detects the mismatch MUST close the
-connection. This prevents a situation where ACKs use an algorithm the sender
-cannot verify.
+A peer is identifiable if **either** of the following is true:
 
-The negotiated algorithm is used for all ACK/NACK commands on the connection.
-Each side computes only one hash per message — no multi-algorithm overhead.
+* The connection uses a CURVE transport mechanism (the peer's long-term public
+  key serves as identity).
+* The peer has set a non-empty ZMQ_IDENTITY (routing ID).
+
+If neither condition is met, the peer receiving the READY/INITIATE command MUST
+close the connection. Implementations MUST NOT fall back to endpoint-based
+identity (IP address, DNS name), as this is unreliable across network changes
+and load balancers.
 
 ### Interoperability with libzmq
 
@@ -128,12 +112,12 @@ connecting to a libzmq peer will see a QoS mismatch and drop the connection.
 This is intentional — mixing guaranteed and unguaranteed peers would violate
 delivery semantics.
 
-## ACK/NACK Command Frames
+## Command Frames
 
 ### Wire format
 
-ACK and NACK are standard ZMTP command frames. The command name is encoded
-per [23/ZMTP Section 2.1](https://rfc.zeromq.org/spec/23/):
+ACK, CLR, COMP, and NACK are standard ZMTP command frames. The command name is
+encoded per [23/ZMTP Section 2.1](https://rfc.zeromq.org/spec/23/):
 
 ```
 Command frame body:
@@ -142,39 +126,90 @@ Command frame body:
 
 #### ACK command
 
+Acknowledges receipt of a message at the transport layer. Sent by receiver to
+sender.
+
 ```
 Name: "ACK" (3 bytes)
-Data: [1 byte algorithm] [N bytes hash_digest]
+Data: [1 byte algorithm] [8 bytes hash_digest]
 ```
 
-#### NACK command (reserved for QoS 3)
+Used at QoS 1 and QoS 2. Not used at QoS 3 (replaced by COMP).
+
+#### CLR command
+
+Tells the receiver to remove a digest from its deduplication set. Sent by
+sender to receiver after receiving an ACK or COMP.
+
+```
+Name: "CLR" (3 bytes)
+Data: [1 byte algorithm] [8 bytes hash_digest]
+```
+
+Used at QoS >= 2.
+
+#### COMP command
+
+Acknowledges successful application-level processing. Sent by receiver to
+sender. Replaces ACK at QoS 3.
+
+```
+Name: "COMP" (4 bytes)
+Data: [1 byte algorithm] [8 bytes hash_digest]
+```
+
+Used at QoS 3 only.
+
+#### NACK command
+
+Signals application-level processing failure. Sent by receiver to sender.
 
 ```
 Name: "NACK" (4 bytes)
-Data: [1 byte algorithm] [N bytes hash_digest] [M bytes error_info]
+Data: [1 byte algorithm] [8 bytes hash_digest] [error_info]
 ```
 
-### Hash algorithm registry
+Where `error_info` is:
 
-The first byte of the command data selects the hash algorithm:
+```
+[1 byte error_code] [2 bytes msg_length, big-endian] [msg_length bytes UTF-8 message]
+```
 
-| Prefix | Algorithm       | Digest size | Notes                                    |
-|--------|-----------------|-------------|------------------------------------------|
-| `x`    | XXH64           | 8 bytes     | Fast. Requires xxHash library.            |
-| `s`    | SHA-1 truncated | 8 bytes     | Universally available in standard libraries. |
+The error code byte uses bit 7 as a **retryable flag**, consistent with ZMTP's
+use of high bits as flags in frame headers:
 
-Both algorithms produce 8-byte (64-bit) digests. Collision probability
-within the in-flight window is approximately N^2/2^65 where N is the
-number of un-ACK'd messages -- negligible for any realistic HWM.
+```
+Error code byte:
+  bit 7: 1 = retryable, 0 = terminal
+  bits 6-0: error type
+```
 
-Future specifications MAY define additional algorithm prefixes with
-different digest sizes. The digest size is determined by the algorithm
-prefix byte; implementations MUST know the digest size for every
-algorithm they support.
+Predefined error codes:
 
-Implementations MUST support at least one algorithm. Implementations
-SHOULD support `x` (XXH64) for performance and `s` (SHA-1 truncated) for
-environments where only standard library hashing is available.
+| Code   | Name       | Retryable | Meaning                        |
+|--------|------------|-----------|--------------------------------|
+| `0x81` | TIMEOUT    | yes       | Processing timed out           |
+| `0x02` | BAD_INPUT  | no        | Message malformed or invalid   |
+| `0x83` | INTERNAL   | yes       | Handler crashed / internal error |
+| `0x84` | OVERLOADED | yes       | Receiver at capacity           |
+| `0x05` | REJECTED   | no        | Explicitly rejected by application |
+
+Implementations MUST respect the retryable bit for unknown error codes. This
+allows peers to define custom error codes while ensuring correct retry behavior
+from senders that do not recognize them.
+
+Used at QoS 3 only.
+
+### Hash algorithm
+
+This version of the specification mandates **XXH64** as the sole hash
+algorithm. The algorithm byte in all command frames MUST be `x` (0x78).
+
+A future revision of this specification MAY introduce additional algorithms
+(e.g. XXH128) and a negotiation mechanism. The algorithm byte is retained in
+the wire format for forward compatibility.
+
+Implementations MUST reject command frames with an unrecognized algorithm byte.
 
 ### Hash input
 
@@ -190,15 +225,14 @@ the concatenation of the ZMTP frame encodings:
 For each part Pi at index i:
   flags  = 0x01 (MORE) if i < n, else 0x00
   flags |= 0x02 (LONG) if Pi.bytesize > 255
-  
+
   If LONG flag set:
     wire_frame = [flags:1] [size:8 big-endian] [Pi]
   Else:
     wire_frame = [flags:1] [size:1] [Pi]
 
 hash_input = wire_frame_0 || wire_frame_1 || ... || wire_frame_n
-digest     = XXH64(hash_input)               # for algorithm "x"
-           = truncate64(SHA1(hash_input))     # for algorithm "s"
+digest     = XXH64(hash_input)
 ```
 
 **Rationale:** Hashing raw wire bytes (instead of `parts.join("")`) ensures
@@ -210,9 +244,6 @@ are distinct messages and MUST produce distinct hashes.
 
 The 8-byte XXH64 digest MUST be encoded in **little-endian** byte order
 (matching the native output of xxHash on most platforms).
-
-The 8-byte SHA-1 truncated digest is the first 8 bytes of the SHA-1 output
-(big-endian, as produced by SHA-1).
 
 ## Per-Socket-Type Behavior
 
@@ -250,6 +281,85 @@ No change from standard behavior.
 * Over inproc/IPC: Retry after `reconnect_interval` (with exponential backoff).
 * Un-ACK'd messages add to the effective HWM, providing natural backpressure
   against traffic amplification.
+
+#### QoS 2
+
+QoS 2 adds **connection pinning** and **receiver-side deduplication** to
+prevent the duplicate delivery that QoS 1 causes through failover.
+
+**Sender (PUSH/SCATTER):**
+
+1. Same as QoS 1: compute hash, store in pending store, send message.
+2. The pending store is **per-connection**: entries record which connection the
+   message was sent on.
+3. When an ACK is received, the sender sends a **CLR** command back to the
+   receiver on the same connection, then removes the entry from the pending
+   store.
+4. When a connection is lost, pending messages for that connection MUST NOT be
+   re-enqueued to other peers. They remain pending until the **same peer**
+   reconnects (identified by CURVE public key or ZMQ_IDENTITY).
+5. On reconnect to the same peer, the sender retransmits all pending messages
+   for that peer in their original order, before sending any new messages.
+6. If the peer does not reconnect within the configured **dead-letter timeout**,
+   pending messages are dead-lettered (see [Dead letter](#dead-letter)).
+
+**Receiver (PULL/GATHER):**
+
+1. The receiver maintains a **deduplication set** of digests for messages it has
+   already delivered.
+2. On receiving a message, the receiver computes its hash and checks the dedup
+   set:
+   - If the digest is **not** in the set: add it, send ACK, deliver to the
+     application.
+   - If the digest **is** in the set (retransmit after reconnect): send ACK,
+     do NOT deliver again.
+3. When a CLR command is received, the receiver removes the corresponding digest
+   from the dedup set.
+4. The dedup set SHOULD have a **TTL** on entries (default: 60 seconds) to
+   prevent unbounded growth if CLR commands are lost. Entries SHOULD also be
+   evicted when the set exceeds `recv_hwm` entries (oldest first).
+
+#### QoS 3
+
+QoS 3 replaces transport-layer ACK with **application-level confirmation**. The
+receiver tells the sender whether the message was successfully processed.
+
+**Sender (PUSH/SCATTER):**
+
+1. Same as QoS 2: compute hash, store in per-connection pending store, send
+   message.
+2. The sender listens for **COMP** and **NACK** command frames (not ACK).
+3. On COMP: send CLR, remove from pending store. Delivery complete.
+4. On NACK:
+   - If the error code is **retryable** (bit 7 set): re-send the message to
+     the same peer after a backoff delay. Increment a retry counter.
+   - If the error code is **terminal** (bit 7 clear): dead-letter the message
+     immediately.
+   - If the retry counter exceeds the configured **max retries** (default: 3):
+     dead-letter the message.
+5. Connection loss behavior is the same as QoS 2 (pin to same peer, no
+   failover).
+
+**Receiver (PULL/GATHER):**
+
+1. The receiver maintains a dedup set as at QoS 2.
+2. On receiving a message, the receiver checks the dedup set for duplicates
+   (same as QoS 2). If not a duplicate, the message is delivered to the
+   application and the receiver **waits for the application to signal
+   completion**.
+3. On success: the receiver sends a **COMP** command.
+4. On failure: the receiver sends a **NACK** command with the appropriate error
+   code and a human-readable error message.
+5. If the application does not signal within the configured **processing
+   timeout**, the receiver sends a NACK with error code `0x81` (TIMEOUT).
+6. On CLR: remove from dedup set (same as QoS 2).
+
+**Application processing interface:**
+
+The mechanism by which the application signals completion or failure is
+implementation-defined. Languages with exception handling MAY use block-based
+processing where COMP is sent on normal return and NACK on exception. Languages
+without exceptions SHOULD provide explicit completion and rejection functions.
 
 ### REQ/REP
 
@@ -290,6 +400,53 @@ request may be delivered to multiple REP peers.
 REP sockets require no QoS-specific changes — replying is their normal
 behavior.
 
+#### QoS 2
+
+At QoS 2, the reply is still the acknowledgment, but **failover is disabled**.
+
+If the connection drops while in `:waiting_reply` state:
+
+1. The REQ socket remains in `:waiting_reply` state.
+2. The original request remains pending for the **same REP peer** (identified
+   by CURVE public key or ZMQ_IDENTITY).
+3. On reconnect to the same peer, the request is retransmitted.
+4. If the peer does not reconnect within the configured dead-letter timeout, the
+   request is dead-lettered and the REQ socket transitions to `:ready`.
+
+**Applications SHOULD still ensure request handlers are idempotent.** While
+QoS 2 prevents cross-peer duplicates, a same-peer retransmit after reconnect
+may cause the REP to process the request a second time (e.g. if the REP
+processed the request but the connection dropped before the reply was sent).
+
+REQ/REP does not use CLR at QoS 2. The reply completes the exchange; there is
+no dedup set on the REP side.
+
+#### QoS 3
+
+At QoS 3, REQ/REP adds **application-level error signaling** via NACK. The
+reply continues to serve as the success signal (COMP is not used separately).
+
+**REP behavior:**
+
+* On success: send the reply normally. The reply serves as COMP.
+* On failure: send a **NACK command frame** instead of a reply. The NACK
+  contains the error code and human-readable message. No data frames are sent.
+
+**REQ behavior:**
+
+* If reply data frames arrive: success. Deliver to the application normally.
+* If a NACK command frame arrives: failure. The REQ socket MUST make the error
+  code and message available to the application through an
+  implementation-defined mechanism (e.g. raising an exception from `recv`,
+  returning an error object, or providing a separate status query function).
+  The REQ socket transitions to `:ready`.
+
+The REQ application decides whether to retry — the library does not auto-retry
+for REQ/REP, as the application has context the library lacks (e.g. whether to
+retry with the same arguments, modify the request, or give up).
+
+Connection loss behavior is the same as QoS 2 (pin to same REP, no failover).
+
 ### PUB/SUB, XPUB/XSUB, RADIO/DISH
 
 #### QoS 0 (default)
@@ -321,12 +478,64 @@ tracks one entry per message — it is ACK'd when **any** subscriber ACKs.
 Applications that need per-subscriber delivery tracking should use XPUB to
 observe subscription events and implement higher-level logic.
 
+#### QoS 2
+
+At QoS 2, the publisher tracks delivery **per subscriber** (per connection)
+rather than per message.
+
+**Publisher (PUB/XPUB/RADIO):**
+
+1. The pending store is keyed by **(digest, connection)** — one entry per
+   message per subscriber connection.
+2. When a subscriber ACKs, the publisher sends CLR on that connection and
+   removes the (digest, connection) entry from the pending store.
+3. When a subscriber disconnects, pending messages for that subscriber MUST NOT
+   be redistributed to other subscribers. They remain pending until the same
+   subscriber reconnects.
+4. On reconnect to the same subscriber, the publisher retransmits all pending
+   messages for that subscriber.
+5. If the subscriber does not reconnect within the dead-letter timeout, pending
+   messages for that subscriber are dead-lettered.
+
+**Subscriber (SUB/XSUB/DISH):**
+
+Same deduplication behavior as PULL/GATHER at QoS 2: maintain a dedup set,
+ACK (with dedup check), remove on CLR.
+
+#### QoS 3
+
+PUB/SUB, XPUB/XSUB, and RADIO/DISH MUST reject QoS 3 during handshake.
+Per-subscriber retry queues would fundamentally change fan-out semantics and
+belong in a higher-level protocol.
+
+## Dead Letter
+
+At QoS >= 2, messages can become undeliverable when a pinned peer does not
+reconnect or when retry limits are exhausted (QoS 3). These messages are
+**dead-lettered**.
+
+Dead-lettering occurs when:
+
+* **QoS 2/3, connection loss:** The pinned peer does not reconnect within the
+  configured dead-letter timeout. Default: implementation-defined, RECOMMENDED
+  60 seconds.
+* **QoS 3, terminal NACK:** The receiver sends a NACK with a terminal error
+  code (bit 7 clear). The message is dead-lettered immediately.
+* **QoS 3, retry exhaustion:** The retry counter exceeds the configured max
+  retries. The message is dead-lettered.
+
+The dead-letter mechanism is implementation-defined. Implementations SHOULD
+provide a callback or event that delivers the dead-lettered message and the
+reason (timeout, terminal error, retry exhaustion) to the application.
+Implementations that do not provide a callback MUST log a warning when a
+message is dead-lettered.
+
 ## Inproc Transport
 
 ### Command queues
 
-At QoS >= 1, inproc connections MUST have command queues for ACK/NACK flow,
-even if the socket types would not normally require command support.
+At QoS >= 1, inproc connections MUST have command queues for ACK/CLR/COMP/NACK
+flow, even if the socket types would not normally require command support.
 
 ### DirectPipe bypass
 
@@ -340,9 +549,14 @@ Pending (un-ACK'd) messages are "in flight" — they have left the send queue bu
 have not been confirmed. Implementations MAY count pending messages toward the
 send HWM to provide backpressure.
 
-The first version of this specification treats pending messages as out-of-band
-(similar to TCP kernel buffers) and does not count them toward HWM. This may be
-revised in future versions based on operational experience.
+At QoS 3, messages may remain pending for the duration of application-level
+processing, which can be significantly longer than network round-trip time.
+Implementations SHOULD count pending messages toward the send HWM at QoS 3 to
+prevent the sender from overwhelming a slow receiver.
+
+At QoS 1 and 2, the first version of this specification treats pending messages
+as out-of-band (similar to TCP kernel buffers) and does not count them toward
+HWM. This may be revised in future versions based on operational experience.
 
 ## xxHash
 
@@ -374,17 +588,26 @@ digest     = [XXhash.xxh64(wire_bytes)].pack("Q<")  # 8 bytes, little-endian
   collision attacks. An adversary who can inject messages could craft two
   different messages with the same XXH64 digest, causing a false ACK. To
   mitigate this, use a secure transport (TLS, CURVE) so that only authenticated
-  peers can send messages. The `s` algorithm (SHA-1 truncated) is also not
-  collision-resistant at 64 bits, despite SHA-1 being a cryptographic hash.
+  peers can send messages.
 
 * **Collision probability.** With 64-bit digests and `N` messages in flight,
   the probability of an accidental collision is approximately `N² / 2⁶⁵`. With
   1000 in-flight messages, this is ~5.4 × 10⁻¹⁴. Applications with strict
   correctness requirements SHOULD add application-level sequence numbers.
 
+* **Dedup set collisions (QoS >= 2).** At QoS 2 and 3, the receiver maintains a
+  deduplication set of delivered digests. A hash collision in this set would
+  cause a genuinely new message to be silently suppressed as a "duplicate." The
+  probability is the same as above — negligible for realistic workloads — but the
+  consequence is message loss rather than a false ACK. Applications with strict
+  correctness requirements SHOULD add application-level sequence numbers.
+
 * **Replay.** QoS 1 provides at-least-once delivery, not exactly-once.
-  Applications MUST handle duplicate messages. Adding a sequence number or
-  unique ID to the message payload is the standard approach.
+  Applications MUST handle duplicate messages. QoS 2 and 3 provide
+  exactly-once delivery within a session, but across peer crashes (where
+  in-memory state is lost), duplicates may still occur. Adding a sequence
+  number or unique ID to the message payload is the standard approach for
+  end-to-end deduplication.
 
 * **Amplification.** A misbehaving peer that never ACKs could cause unbounded
   growth in the sender's pending store. Implementations SHOULD limit the
