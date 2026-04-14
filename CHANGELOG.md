@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Rebuilt against current omq routing API.** Routing extensions now
+  match the post-0.20 omq contracts (`RoundRobinExt`, `PushExt`,
+  `ScatterExt`, `PullExt`, `GatherExt`, `FanOutExt`, `SubExt`,
+  `XSubExt`, `DishExt`, `ReqExt`).
+- **Inproc DirectPipe short-circuit.** QoS hooks now skip DirectPipe
+  peers (inproc delivery is synchronous; ACKs are not meaningful there).
+- **ACK command dispatch** now goes through a new `ConnectionExt`
+  prepend on `Protocol::ZMTP::Connection` (`qos_on_command` hook),
+  avoiding any change to core omq's recv pump.
+- `EngineExt` removed; handshake QoS negotiation lives in a new
+  `LifecycleExt` prepended onto `Engine::ConnectionLifecycle`.
+
+### Changed
+
+- Test suite rewritten for the omq 0.20 socket API (setter-based
+  `linger`/`qos`/`reconnect_interval`, top-level `SocketError`, explicit
+  `SUB#subscribe`).
+
 ## 0.1.1 — 2026-04-07
 
 - YARD documentation on all public methods and classes.

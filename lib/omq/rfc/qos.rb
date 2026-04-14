@@ -17,15 +17,16 @@ require_relative "qos/version"
 require_relative "qos/zmtp/command_ext"
 require_relative "qos/hasher"
 require_relative "qos/pending_store"
+require_relative "qos/connection_ext"
+require_relative "qos/lifecycle_ext"
 require_relative "qos/routing_ext"
 require_relative "qos/options_ext"
 require_relative "qos/socket_ext"
-require_relative "qos/engine_ext"
 
 # Wire up prepends.
 Protocol::ZMTP::Codec::Command.singleton_class.prepend(OMQ::QoS::CommandClassExt)
 Protocol::ZMTP::Codec::Command.prepend(OMQ::QoS::CommandExt)
-OMQ::Engine.prepend(OMQ::QoS::EngineExt)
+
 OMQ::Routing::RoundRobin.prepend(OMQ::QoS::RoundRobinExt)
 OMQ::Routing::Push.prepend(OMQ::QoS::PushExt)
 OMQ::Routing::Pull.prepend(OMQ::QoS::PullExt)

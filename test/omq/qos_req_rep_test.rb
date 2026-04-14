@@ -6,7 +6,7 @@ describe "REQ send/recv ordering" do
   before { OMQ::Transport::Inproc.reset! }
 
   it "raises SocketError on double send" do
-    Async do
+    Sync do
       rep = OMQ::REP.bind("inproc://req-order-1")
       req = OMQ::REQ.connect("inproc://req-order-1")
 
@@ -18,8 +18,9 @@ describe "REQ send/recv ordering" do
     end
   end
 
+
   it "allows send after receive" do
-    Async do
+    Sync do
       rep = OMQ::REP.bind("inproc://req-order-2")
       req = OMQ::REQ.connect("inproc://req-order-2")
 
@@ -39,35 +40,40 @@ describe "REQ send/recv ordering" do
   end
 end
 
+
 describe "QoS 1 REQ/REP retry on disconnect" do
   it "re-sends to next REP when first drops" do
-    Async do
-      rep1 = OMQ::REP.new(nil, linger: 0, qos: 1)
+    Sync do
+      rep1 = OMQ::REP.new
+      rep1.qos    = 1
+      rep1.linger = 0
       rep1.bind("tcp://127.0.0.1:0")
       port1 = rep1.last_tcp_port
 
-      rep2 = OMQ::REP.new(nil, linger: 0, qos: 1)
+      rep2 = OMQ::REP.new
+      rep2.qos    = 1
+      rep2.linger = 0
       rep2.bind("tcp://127.0.0.1:0")
       port2 = rep2.last_tcp_port
 
-      req = OMQ::REQ.new(nil, linger: 1, qos: 1)
+      req = OMQ::REQ.new
+      req.qos                = 1
+      req.linger             = 1
       req.reconnect_interval = RECONNECT_INTERVAL
       req.connect("tcp://127.0.0.1:#{port1}")
       req.connect("tcp://127.0.0.1:#{port2}")
       wait_connected(req)
 
-      # Complete one round trip so both connections are live
       req.send("ping1")
       r = [rep1, rep2].find do |rep|
-        Async::Task.current.with_timeout(0.2) { rep.receive } rescue nil
+        Async::Task.current.with_timeout(0.5) { rep.receive } rescue nil
       end
       r.send("pong1")
       assert_equal ["pong1"], req.receive
 
-      # Kill rep1, next request goes to rep2
       rep1.close
       rep1 = nil
-      sleep 0.05
+      sleep 0.1
 
       req.send("ping2")
       assert_equal ["ping2"], rep2.receive
