@@ -7,7 +7,7 @@
 - **Rebuilt against current omq routing API.** Routing extensions now
   match the post-0.20 omq contracts (`RoundRobinExt`, `PushExt`,
   `ScatterExt`, `PullExt`, `GatherExt`, `FanOutExt`, `SubExt`,
-  `XSubExt`, `DishExt`, `ReqExt`).
+  `XSubExt`, `DishExt`).
 - **Inproc DirectPipe short-circuit.** QoS hooks now skip DirectPipe
   peers (inproc delivery is synchronous; ACKs are not meaningful there).
 - **ACK command dispatch** now goes through a new `ConnectionExt`
@@ -15,6 +15,24 @@
   avoiding any change to core omq's recv pump.
 - `EngineExt` removed; handshake QoS negotiation lives in a new
   `LifecycleExt` prepended onto `Engine::ConnectionLifecycle`.
+- **REQ no longer double-enqueues on mid-flight disconnect.** The old
+  `ReqExt` override re-enqueued the pending request on top of
+  `RoundRobinExt`'s pending-store replay, and incorrectly flipped
+  `@state` back to `:ready` while a request was still outstanding.
+  `RoundRobinExt` already handles the replay; `ReqExt` is removed.
+
+### Added
+
+- **Bounded pending store with backpressure.** `PendingStore` now takes
+  a `capacity:` (sized to `send_hwm`) and exposes `#wait_for_slot`.
+  `RoundRobinExt#write_batch` waits for a free slot before sending, so a
+  peer that stops ACKing stalls the sender instead of growing the store
+  unboundedly. `#ack` and `#messages_for` signal an
+  `Async::Notification` to wake blocked senders.
+- Multi-message in-flight replay test for QoS 1 PUSH/PULL.
+- SIGKILL peer-process replay test for QoS 1 PUSH/PULL (forks a child
+  PULL, kills it hard, asserts pending messages land on a backup).
+- README sections on backpressure and `linger: 0` semantics.
 
 ### Changed
 

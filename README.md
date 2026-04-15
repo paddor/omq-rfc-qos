@@ -54,6 +54,23 @@ Name: "ACK"   Data: 'x' + XXH64(wire_bytes)    # 9 bytes total
 The hash covers raw ZMTP wire bytes (frame headers + bodies), so
 different framings of the same payload produce different digests.
 
+### Backpressure
+
+Pending (un-ACK'd) messages count toward `send_hwm`. When the pending
+store is full, `send` blocks in the fiber until an ACK arrives or the
+connection drops (which re-enqueues the stuck messages). A misbehaving
+peer that never ACKs will stall the sender rather than grow the store
+unboundedly.
+
+### Linger and pending messages
+
+`Socket#close` with `linger: 0` discards anything that hasn't yet been
+ACK'd. This is correct but worth calling out: with QoS 1, messages you
+sent just before closing — even successfully written on the wire — can
+still be lost if the ACKs hadn't come back yet. Set `linger` to a
+non-zero value (or `Float::INFINITY`) if you need the close to wait
+for outstanding ACKs.
+
 ### Zero overhead at QoS 0
 
 At QoS 0 (the default), no pending store is created, no ACK commands are

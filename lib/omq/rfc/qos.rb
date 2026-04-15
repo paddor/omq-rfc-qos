@@ -33,7 +33,6 @@ OMQ::Routing::Pull.prepend(OMQ::QoS::PullExt)
 OMQ::Routing::FanOut.prepend(OMQ::QoS::FanOutExt)
 OMQ::Routing::Sub.prepend(OMQ::QoS::SubExt)
 OMQ::Routing::XSub.prepend(OMQ::QoS::XSubExt)
-OMQ::Routing::Req.prepend(OMQ::QoS::ReqExt)
 
 # Draft socket types from optional extension gems.
 OMQ::Routing::Scatter.prepend(OMQ::QoS::ScatterExt) if defined?(OMQ::Routing::Scatter)

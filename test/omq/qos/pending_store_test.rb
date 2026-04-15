@@ -3,7 +3,7 @@
 require_relative "../../test_helper"
 
 describe OMQ::QoS::PendingStore do
-  let(:store)  { OMQ::QoS::PendingStore.new }
+  let(:store)  { OMQ::QoS::PendingStore.new(capacity: 1000) }
   let(:conn_a) { Object.new }
   let(:conn_b) { Object.new }
 
@@ -40,6 +40,46 @@ describe OMQ::QoS::PendingStore do
     # Only conn_b remains
     assert_equal 1, store.size
   end
+
+  it "blocks wait_for_slot when at capacity and unblocks on ack" do
+    Sync do
+      small = OMQ::QoS::PendingStore.new(capacity: 2)
+      small.track("h1______", ["a"].freeze, conn_a)
+      small.track("h2______", ["b"].freeze, conn_a)
+
+      waited = false
+      task = Async do
+        small.wait_for_slot
+        waited = true
+      end
+
+      Async::Task.current.yield
+      refute waited, "wait_for_slot should block while at capacity"
+
+      small.ack("h1______")
+      task.wait
+      assert waited
+    end
+  end
+
+
+  it "unblocks wait_for_slot when a connection drops" do
+    Sync do
+      small = OMQ::QoS::PendingStore.new(capacity: 2)
+      small.track("h1______", ["a"].freeze, conn_a)
+      small.track("h2______", ["b"].freeze, conn_a)
+
+      task = Async do
+        small.wait_for_slot
+      end
+
+      Async::Task.current.yield
+      small.messages_for(conn_a)
+      task.wait
+      assert_equal 0, small.size
+    end
+  end
+
 
   it "records sent_at timestamp" do
     before = Process.clock_gettime(Process::CLOCK_MONOTONIC)

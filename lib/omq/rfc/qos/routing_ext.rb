@@ -64,7 +64,7 @@ module OMQ
 
       def pending_store
         return @pending_store if @pending_store
-        @pending_store = PendingStore.new if @engine.options.qos >= 1
+        @pending_store = PendingStore.new(capacity: @engine.options.send_hwm) if @engine.options.qos >= 1
         @pending_store
       end
 
@@ -84,14 +84,17 @@ module OMQ
 
 
       def write_batch(conn, batch)
-        super
         ps = @pending_store
-        return unless ps
-        return if QoS.reliable_transport?(conn)
-        algo = algo_for(conn)
-        batch.each do |parts|
-          wire_parts = transform_send(parts)
-          ps.track(QoS.digest(wire_parts, algorithm: algo), parts, conn)
+        if ps && !QoS.reliable_transport?(conn)
+          ps.wait_for_slot
+          super
+          algo = algo_for(conn)
+          batch.each do |parts|
+            wire_parts = transform_send(parts)
+            ps.track(QoS.digest(wire_parts, algorithm: algo), parts, conn)
+          end
+        else
+          super
         end
       end
     end
@@ -178,7 +181,7 @@ module OMQ
 
       def pending_store
         return @pending_store if @pending_store
-        @pending_store = PendingStore.new if @engine.options.qos >= 1
+        @pending_store = PendingStore.new(capacity: @engine.options.send_hwm) if @engine.options.qos >= 1
         @pending_store
       end
 
@@ -291,25 +294,11 @@ module OMQ
     end
 
 
-    # Prepended onto Routing::Req. Stashes the last-sent request so it
-    # can be re-enqueued to another peer when the first one drops
-    # before the reply arrives.
-    #
-    module ReqExt
-      def connection_removed(conn)
-        super
-        return unless @engine.options.qos >= 1
-        return unless @state == :waiting_reply && @pending_request
-        @state           = :ready
-        @send_queue.enqueue(@pending_request)
-        @pending_request = nil
-      end
-
-
-      def enqueue(parts)
-        @pending_request = parts if @engine.options.qos >= 1
-        super
-      end
-    end
+    # Routing::Req needs no QoS-specific override. Re-enqueueing a
+    # mid-flight request on connection loss is already handled by
+    # {RoundRobinExt#remove_round_robin_send_connection} through the
+    # pending store. REQ's `@state` must remain `:waiting_reply` until
+    # the retried request is actually answered, so flipping it back to
+    # `:ready` would be wrong.
   end
 end
