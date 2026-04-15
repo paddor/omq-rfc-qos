@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-04-15
+
+### Changed
+
+- **Requires omq ~> 0.21.** Routing extensions track the shared-queue
+  recv path introduced in omq 0.21 (no more `FairQueue` / `SignalingQueue`).
 
 ### Fixed
 

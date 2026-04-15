@@ -222,12 +222,8 @@ module OMQ
           conn.send_command(Protocol::ZMTP::Codec::Command.subscribe(prefix))
         end
 
-        algo      = QoS.algo_for(conn)
-        conn_q    = Routing.build_queue(@engine.options.recv_hwm, @engine.options.on_mute)
-        signaling = Routing::SignalingQueue.new(conn_q, @recv_queue)
-        @recv_queue.add_queue(conn, conn_q)
-
-        task = @engine.start_recv_pump(conn, signaling) do |msg|
+        algo = QoS.algo_for(conn)
+        task = @engine.start_recv_pump(conn, @recv_queue) do |msg|
           conn.send_command(QoS.ack_command(msg, algorithm: algo))
           msg
         end
@@ -248,12 +244,8 @@ module OMQ
 
         @connections << conn
 
-        algo      = QoS.algo_for(conn)
-        conn_q    = Routing.build_queue(@engine.options.recv_hwm, @engine.options.on_mute)
-        signaling = Routing::SignalingQueue.new(conn_q, @recv_queue)
-        @recv_queue.add_queue(conn, conn_q)
-
-        task = @engine.start_recv_pump(conn, signaling) do |msg|
+        algo = QoS.algo_for(conn)
+        task = @engine.start_recv_pump(conn, @recv_queue) do |msg|
           conn.send_command(QoS.ack_command(msg, algorithm: algo))
           msg
         end
@@ -279,12 +271,8 @@ module OMQ
           conn.send_command(Protocol::ZMTP::Codec::Command.join(group))
         end
 
-        algo      = QoS.algo_for(conn)
-        conn_q    = Routing.build_queue(@engine.options.recv_hwm, @engine.options.on_mute)
-        signaling = Routing::SignalingQueue.new(conn_q, @recv_queue)
-        @recv_queue.add_queue(conn, conn_q)
-
-        task = @engine.start_recv_pump(conn, signaling) do |msg|
+        algo = QoS.algo_for(conn)
+        task = @engine.start_recv_pump(conn, @recv_queue) do |msg|
           conn.send_command(QoS.ack_command(msg, algorithm: algo))
           msg
         end
