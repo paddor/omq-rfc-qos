@@ -4,7 +4,7 @@
 #
 # Usage:
 #   require "omq"
-#   require "omq/rfc/qos"
+#   require "omq/qos"
 #
 #   push = OMQ::PUSH.new
 #   push.qos = 1
@@ -30,11 +30,7 @@ Protocol::ZMTP::Codec::Command.prepend(OMQ::QoS::CommandExt)
 OMQ::Routing::RoundRobin.prepend(OMQ::QoS::RoundRobinExt)
 OMQ::Routing::Push.prepend(OMQ::QoS::PushExt)
 OMQ::Routing::Pull.prepend(OMQ::QoS::PullExt)
-OMQ::Routing::FanOut.prepend(OMQ::QoS::FanOutExt)
-OMQ::Routing::Sub.prepend(OMQ::QoS::SubExt)
-OMQ::Routing::XSub.prepend(OMQ::QoS::XSubExt)
 
 # Draft socket types from optional extension gems.
 OMQ::Routing::Scatter.prepend(OMQ::QoS::ScatterExt) if defined?(OMQ::Routing::Scatter)
 OMQ::Routing::Gather.prepend(OMQ::QoS::GatherExt)   if defined?(OMQ::Routing::Gather)
-OMQ::Routing::Dish.prepend(OMQ::QoS::DishExt)       if defined?(OMQ::Routing::Dish)

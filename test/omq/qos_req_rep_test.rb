@@ -47,14 +47,12 @@ describe "QoS 1 REQ/REP retry on disconnect" do
       rep1 = OMQ::REP.new
       rep1.qos    = 1
       rep1.linger = 0
-      rep1.bind("tcp://127.0.0.1:0")
-      port1 = rep1.last_tcp_port
+      port1 = rep1.bind("tcp://127.0.0.1:0").port
 
       rep2 = OMQ::REP.new
       rep2.qos    = 1
       rep2.linger = 0
-      rep2.bind("tcp://127.0.0.1:0")
-      port2 = rep2.last_tcp_port
+      port2 = rep2.bind("tcp://127.0.0.1:0").port
 
       req = OMQ::REQ.new
       req.qos                = 1

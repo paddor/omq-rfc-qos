@@ -1,7 +1,7 @@
 # OMQ::QoS -- Delivery Guarantees for OMQ
 
-[![CI](https://github.com/paddor/omq-rfc-qos/actions/workflows/ci.yml/badge.svg)](https://github.com/paddor/omq-rfc-qos/actions/workflows/ci.yml)
-[![Gem Version](https://img.shields.io/gem/v/omq-rfc-qos?color=e9573f)](https://rubygems.org/gems/omq-rfc-qos)
+[![CI](https://github.com/paddor/omq-qos/actions/workflows/ci.yml/badge.svg)](https://github.com/paddor/omq-qos/actions/workflows/ci.yml)
+[![Gem Version](https://img.shields.io/gem/v/omq-qos?color=e9573f)](https://rubygems.org/gems/omq-qos)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](LICENSE)
 [![Ruby](https://img.shields.io/badge/Ruby-%3E%3D%203.3-CC342D?logo=ruby&logoColor=white)](https://www.ruby-lang.org)
 
@@ -11,7 +11,7 @@ xxHash message identification.
 
 ```ruby
 require "omq"
-require "omq/rfc/qos"
+require "omq/qos"
 
 push = OMQ::PUSH.new(nil, qos: 1)
 push.connect("tcp://worker-1:5555")
@@ -29,19 +29,22 @@ push << "reliably delivered"
 
 ## How it works
 
-`require "omq/rfc/qos"` prepends onto OMQ routing strategies. No
+`require "omq/qos"` prepends onto OMQ routing strategies. No
 monkey-patching of core send/receive paths — the prepends activate only
 when `qos >= 1`:
 
-- **Sender** (PUSH, SCATTER, PUB, XPUB, RADIO): tracks sent messages in
-  a pending store keyed by xxHash digest. An ACK listener reads ACK
-  command frames from each peer. On disconnect, unacked messages are
-  re-enqueued for delivery to the next peer.
-- **Receiver** (PULL, GATHER, SUB, XSUB, DISH): sends an ACK command
-  frame back to the sender after each message is received.
+- **Sender** (PUSH, SCATTER): tracks sent messages in a pending store
+  keyed by xxHash digest. An ACK listener reads ACK command frames from
+  each peer. On disconnect, unacked messages are re-enqueued for
+  delivery to the next peer.
+- **Receiver** (PULL, GATHER): sends an ACK command frame back to the
+  sender after each message is received.
 - **REQ/REP**: the reply IS the ACK. At QoS 1, if the connection drops
   before a reply arrives, the request is transparently re-sent to the
   next REP.
+
+Fan-out patterns (PUB/SUB, XPUB/XSUB, RADIO/DISH) are deliberately out
+of scope — see the RFC for the rationale.
 
 ### ACK protocol
 
@@ -82,8 +85,6 @@ sent, and no xxHash is computed. The prepended methods check
 | Sender         | Receiver        | ACK mechanism       |
 |----------------|-----------------|---------------------|
 | PUSH / SCATTER | PULL / GATHER   | ACK command frame   |
-| PUB / XPUB     | SUB / XSUB      | ACK command frame   |
-| RADIO          | DISH            | ACK command frame   |
 | REQ            | REP             | Reply = ACK         |
 
 ## Requirements

@@ -63,8 +63,7 @@ describe "QoS 1 PUSH/PULL" do
       Sync do
         pull = OMQ::PULL.new
         pull.qos = 1
-        pull.bind("tcp://127.0.0.1:0")
-        port = pull.last_tcp_port
+        port = pull.bind("tcp://127.0.0.1:0").port
 
         push = OMQ::PUSH.new
         push.qos                = 1
@@ -88,14 +87,12 @@ describe "QoS 1 PUSH/PULL" do
         pull1.qos      = 1
         pull1.recv_hwm = 1
         pull1.linger   = 0
-        pull1.bind("tcp://127.0.0.1:0")
-        port1 = pull1.last_tcp_port
+        port1 = pull1.bind("tcp://127.0.0.1:0").port
 
         pull2 = OMQ::PULL.new
         pull2.qos    = 1
         pull2.linger = 1
-        pull2.bind("tcp://127.0.0.1:0")
-        port2 = pull2.last_tcp_port
+        port2 = pull2.bind("tcp://127.0.0.1:0").port
 
         push = OMQ::PUSH.new
         push.qos                = 1
@@ -140,8 +137,7 @@ describe "QoS 1 PUSH/PULL" do
           pull = OMQ::PULL.new
           pull.qos      = 1
           pull.recv_hwm = 1
-          pull.bind("tcp://127.0.0.1:0")
-          w.puts pull.last_tcp_port
+          w.puts pull.bind("tcp://127.0.0.1:0").port
           w.close
           sleep 30
         end
@@ -154,8 +150,7 @@ describe "QoS 1 PUSH/PULL" do
         backup = OMQ::PULL.new
         backup.qos    = 1
         backup.linger = 1
-        backup.bind("tcp://127.0.0.1:0")
-        backup_port = backup.last_tcp_port
+        backup_port = backup.bind("tcp://127.0.0.1:0").port
 
         push = OMQ::PUSH.new
         push.qos                = 1
@@ -202,14 +197,12 @@ describe "QoS 1 PUSH/PULL" do
         pull1 = OMQ::PULL.new
         pull1.qos    = 1
         pull1.linger = 0
-        pull1.bind("tcp://127.0.0.1:0")
-        port1 = pull1.last_tcp_port
+        port1 = pull1.bind("tcp://127.0.0.1:0").port
 
         pull2 = OMQ::PULL.new
         pull2.qos    = 1
         pull2.linger = 0
-        pull2.bind("tcp://127.0.0.1:0")
-        port2 = pull2.last_tcp_port
+        port2 = pull2.bind("tcp://127.0.0.1:0").port
 
         push = OMQ::PUSH.new
         push.qos                = 1

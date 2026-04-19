@@ -19,28 +19,29 @@ module OMQ
     end
 
 
-    # Inproc DirectPipes deliver messages synchronously through a shared
+    # Inproc Pipes deliver messages synchronously through a shared
     # in-memory queue, so there's nothing for at-least-once to protect
-    # against. QoS hooks short-circuit when they see a DirectPipe.
+    # against. QoS hooks short-circuit when they see a Pipe.
     #
     # @param conn [Object]
     # @return [Boolean]
     #
     def self.reliable_transport?(conn)
-      defined?(OMQ::Transport::Inproc::DirectPipe) &&
-        conn.is_a?(OMQ::Transport::Inproc::DirectPipe)
+      defined?(OMQ::Transport::Inproc::Pipe) &&
+        conn.is_a?(OMQ::Transport::Inproc::Pipe)
     end
 
 
     # Picks a hash algorithm for a connection by intersecting our
-    # preferences with the peer's advertised list.
+    # preferences with the peer's advertised list (read from the peer's
+    # READY properties).
     #
     # @param connection [Protocol::ZMTP::Connection]
     # @return [String] single-char algorithm identifier
     #
     def self.algo_for(connection)
-      peer = connection.respond_to?(:peer_qos_hash) ? connection.peer_qos_hash : nil
-      negotiate_hash(peer || "") || DEFAULT_HASH_ALGO
+      peer = connection.respond_to?(:peer_properties) ? connection.peer_properties : nil
+      negotiate_hash(peer&.fetch("X-QoS-Hash", "") || "") || DEFAULT_HASH_ALGO
     end
 
 
@@ -48,12 +49,13 @@ module OMQ
     #
     #   * track every successfully written message in a pending store,
     #     keyed by the 8-byte digest of its wire bytes,
-    #   * disable the inproc DirectPipe bypass (no ACK flow possible),
+    #   * disable the inproc Pipe bypass (no ACK flow possible),
     #   * requeue any unacknowledged messages for a connection when
     #     that connection is removed.
     #
     module RoundRobinExt
       private
+
 
       def init_round_robin(engine)
         super
@@ -127,12 +129,6 @@ module OMQ
     end
 
 
-    # Sub/XSub/Dish helper: at QoS 0 or for DirectPipe peers, fall back
-    # to the base implementation. Otherwise call the extended path via
-    # a shared wrapper argument.
-
-
-
     # Prepended onto Routing::Pull. At QoS >= 1 every received message
     # is ACK'd back to the sender before it is enqueued to the
     # application.
@@ -142,7 +138,7 @@ module OMQ
         return super unless @engine.options.qos >= 1
         return super if QoS.reliable_transport?(conn)
         algo = QoS.algo_for(conn)
-        add_fair_recv_connection(conn) do |msg|
+        @engine.start_recv_pump(conn, @recv_queue) do |msg|
           conn.send_command(QoS.ack_command(msg, algorithm: algo))
           msg
         end
@@ -150,134 +146,17 @@ module OMQ
     end
 
 
-    # Same pattern as PullExt — GATHER uses FairRecv too.
+    # Same pattern as PullExt — GATHER uses fair-recv too.
     #
     module GatherExt
       def connection_added(conn)
         return super unless @engine.options.qos >= 1
         return super if QoS.reliable_transport?(conn)
         algo = QoS.algo_for(conn)
-        add_fair_recv_connection(conn) do |msg|
+        @engine.start_recv_pump(conn, @recv_queue) do |msg|
           conn.send_command(QoS.ack_command(msg, algorithm: algo))
           msg
         end
-      end
-    end
-
-
-    # Prepended onto Routing::FanOut. Extends the subscription listener
-    # to also dispatch ACK commands into the pending store, and keeps
-    # per-connection pending tracking so fan-out messages can be
-    # requeued on connection loss.
-    #
-    module FanOutExt
-      private
-
-      def init_fan_out(engine)
-        super
-        @pending_store = nil
-      end
-
-
-      def pending_store
-        return @pending_store if @pending_store
-        @pending_store = PendingStore.new(capacity: @engine.options.send_hwm) if @engine.options.qos >= 1
-        @pending_store
-      end
-
-
-      def start_subscription_listener(conn)
-        @tasks << @engine.spawn_conn_pump_task(conn, annotation: "subscription listener") do
-          loop do
-            frame = conn.read_frame
-            next unless frame.command?
-
-            cmd = Protocol::ZMTP::Codec::Command.from_body(frame.body)
-
-            case cmd.name
-            when "SUBSCRIBE"
-              on_subscribe(conn, cmd.data)
-            when "CANCEL"
-              on_cancel(conn, cmd.data)
-            when "ACK"
-              _, hash = cmd.ack_data
-              pending_store&.ack(hash)
-            end
-          end
-        end
-      end
-    end
-
-
-    # Prepended onto Routing::Sub. At QoS >= 1 each received message
-    # is ACK'd before being enqueued to the application.
-    #
-    module SubExt
-      def connection_added(conn)
-        return super unless @engine.options.qos >= 1
-        return super if QoS.reliable_transport?(conn)
-
-        @connections << conn
-        @subscriptions.each do |prefix|
-          conn.send_command(Protocol::ZMTP::Codec::Command.subscribe(prefix))
-        end
-
-        algo = QoS.algo_for(conn)
-        task = @engine.start_recv_pump(conn, @recv_queue) do |msg|
-          conn.send_command(QoS.ack_command(msg, algorithm: algo))
-          msg
-        end
-
-        @tasks << task if task
-      end
-    end
-
-
-    # Prepended onto Routing::XSub. Same ACK-on-receive behavior as
-    # SubExt, plus it leaves XSub's outbound subscription send pump
-    # untouched.
-    #
-    module XSubExt
-      def connection_added(conn)
-        return super unless @engine.options.qos >= 1
-        return super if QoS.reliable_transport?(conn)
-
-        @connections << conn
-
-        algo = QoS.algo_for(conn)
-        task = @engine.start_recv_pump(conn, @recv_queue) do |msg|
-          conn.send_command(QoS.ack_command(msg, algorithm: algo))
-          msg
-        end
-
-        @tasks << task if task
-
-        q = Routing.build_queue(@engine.options.send_hwm, :block)
-        @conn_queues[conn] = q
-        send(:start_conn_send_pump, conn, q)
-      end
-    end
-
-
-    # Prepended onto Routing::Dish.
-    #
-    module DishExt
-      def connection_added(conn)
-        return super unless @engine.options.qos >= 1
-        return super if QoS.reliable_transport?(conn)
-
-        @connections << conn
-        @groups.each do |group|
-          conn.send_command(Protocol::ZMTP::Codec::Command.join(group))
-        end
-
-        algo = QoS.algo_for(conn)
-        task = @engine.start_recv_pump(conn, @recv_queue) do |msg|
-          conn.send_command(QoS.ack_command(msg, algorithm: algo))
-          msg
-        end
-
-        @tasks << task if task
       end
     end
 

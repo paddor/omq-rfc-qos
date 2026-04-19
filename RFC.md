@@ -48,7 +48,7 @@ intermediaries (brokers, proxies).
   level. Multi-hop guarantees require each hop to use QoS.
 * **Hash-based identification.** Messages are identified by their XXH64 digest
   rather than sequence numbers. This avoids per-connection state for ID
-  allocation and simplifies fan-out patterns.
+  allocation.
 * **Command-frame ACK/NACK.** Acknowledgments are ZMTP command frames, invisible
   to applications. They flow in the opposite direction to data messages.
 
@@ -447,66 +447,21 @@ retry with the same arguments, modify the request, or give up).
 
 Connection loss behavior is the same as QoS 2 (pin to same REP, no failover).
 
-### PUB/SUB, XPUB/XSUB, RADIO/DISH
+### Excluded socket types: PUB/SUB, XPUB/XSUB, RADIO/DISH
 
-#### QoS 0 (default)
+Fan-out socket types MUST reject any QoS level greater than 0 during the
+handshake.
 
-No change from standard behavior.
+At-least-once delivery is conceptually meaningless for fan-out: each subscriber
+receives its own copy of every published message, so there is no other peer to
+fail over to when a subscriber disconnects. The other subscribers already have
+their copies; the dropped subscriber's copy is simply gone. Adding ACKs to
+fan-out would provide per-subscriber backpressure plumbing without delivering
+the guarantee the QoS level claims to offer.
 
-#### QoS 1
-
-**Publisher (PUB/XPUB/RADIO):**
-
-1. The existing subscription listener (which reads SUBSCRIBE/CANCEL/JOIN/LEAVE
-   commands) is extended to also handle ACK commands.
-2. When an ACK is received, the publisher removes the matching entry from its
-   pending store.
-3. At QoS 1, the publisher SHOULD block when no subscribers are connected
-   (rather than dropping messages silently as at QoS 0).
-
-**Subscriber (SUB/XSUB/DISH):**
-
-1. After receiving a message from the recv pump, the subscriber sends an ACK
-   command back to the publisher on the same connection.
-
-**Fan-out semantics at QoS 1:**
-
-At QoS 1, a published message is sent to **all** matching subscribers (same as
-QoS 0). Each subscriber independently ACKs. The publisher's pending store
-tracks one entry per message — it is ACK'd when **any** subscriber ACKs.
-
-Applications that need per-subscriber delivery tracking should use XPUB to
-observe subscription events and implement higher-level logic.
-
-#### QoS 2
-
-At QoS 2, the publisher tracks delivery **per subscriber** (per connection)
-rather than per message.
-
-**Publisher (PUB/XPUB/RADIO):**
-
-1. The pending store is keyed by **(digest, connection)** — one entry per
-   message per subscriber connection.
-2. When a subscriber ACKs, the publisher sends CLR on that connection and
-   removes the (digest, connection) entry from the pending store.
-3. When a subscriber disconnects, pending messages for that subscriber MUST NOT
-   be redistributed to other subscribers. They remain pending until the same
-   subscriber reconnects.
-4. On reconnect to the same subscriber, the publisher retransmits all pending
-   messages for that subscriber.
-5. If the subscriber does not reconnect within the dead-letter timeout, pending
-   messages for that subscriber are dead-lettered.
-
-**Subscriber (SUB/XSUB/DISH):**
-
-Same deduplication behavior as PULL/GATHER at QoS 2: maintain a dedup set,
-ACK (with dedup check), remove on CLR.
-
-#### QoS 3
-
-PUB/SUB, XPUB/XSUB, and RADIO/DISH MUST reject QoS 3 during handshake.
-Per-subscriber retry queues would fundamentally change fan-out semantics and
-belong in a higher-level protocol.
+True fan-out reliability requires per-subscriber durable queues, replay
+protocols, and stable subscriber identity across reconnects. These belong to
+broker-style middleware, not to a per-hop transport extension.
 
 ## Dead Letter
 

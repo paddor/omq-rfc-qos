@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Gem renamed to `omq-qos`** (from `omq-rfc-qos`). Require path moves
+  from `omq/rfc/qos` to `omq/qos`; library code relocated from
+  `lib/omq/rfc/qos/` to `lib/omq/qos/`. The `rfc/` namespace was an
+  unnecessary layer — this is a plugin gem, not a spec repository.
+
+### Removed
+
+- **Fan-out QoS dropped.** PUB/SUB, XPUB/XSUB, and RADIO/DISH are no
+  longer QoS targets. Setting `qos >= 1` on any fan-out socket now
+  raises `ArgumentError` at the setter. ACK-per-subscriber on fan-out
+  was always a poor fit (no meaningful retry target, per-message hash
+  state explodes with N subscribers) — the RFC and README now state
+  this explicitly. QoS 1 remains supported on PUSH/PULL,
+  SCATTER/GATHER, and REQ/REP.
+
 ## 0.2.0 — 2026-04-15
 
 ### Changed
