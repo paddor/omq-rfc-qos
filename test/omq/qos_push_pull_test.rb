@@ -109,20 +109,20 @@ describe "QoS 1 PUSH/PULL" do
         pull1.close
         pull1 = nil
 
-        received = []
-        pull2.read_timeout = 1.0
-        loop do
-          received << pull2.receive.first
-          break if received.size >= n
-        rescue IO::TimeoutError
-          break
-        end
-
         # QoS 1 ACKs after enqueue into the receiver's recv_queue. With
         # recv_hwm=1, at most 1 message is enqueued and ACK'd before the
         # recv pump blocks, so at most 1 message can be "stored but never
         # consumed" when pull1 closes. The remaining n-1 stay un-ACK'd on
         # the sender and replay to pull2.
+        received = []
+        pull2.read_timeout = 1.0
+        loop do
+          received << pull2.receive.first
+          break if received.size >= n - 1
+        rescue IO::TimeoutError
+          break
+        end
+
         expected = (1...n).map { |i| "msg-#{i}" }
         missing  = expected - received
         assert missing.empty?, "missing from pull2: #{missing.inspect}, got: #{received.inspect}"
@@ -173,18 +173,17 @@ describe "QoS 1 PUSH/PULL" do
         Process.wait(child)
         child = nil
 
+        # See comment on the graceful-close variant above — at most
+        # recv_hwm (=1) messages may be stored-but-never-consumed on
+        # the killed peer and thus not replay.
         received = []
         backup.read_timeout = 1.0
         loop do
           received << backup.receive.first
-          break if received.size >= n
+          break if received.size >= n - 1
         rescue IO::TimeoutError
           break
         end
-
-        # See comment on the graceful-close variant above — at most
-        # recv_hwm (=1) messages may be stored-but-never-consumed on
-        # the killed peer and thus not replay.
         expected = (1...n).map { |i| "k#{i}" }
         missing  = expected - received
         assert missing.empty?, "missing: #{missing.inspect}, got: #{received.inspect}"

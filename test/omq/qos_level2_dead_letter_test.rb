@@ -46,7 +46,7 @@ describe "QoS 2 dead-letter" do
 
       push = OMQ::PUSH.new
       push.identity           = "client"
-      push.qos                = OMQ::QoS.exactly_once(dead_letter_timeout: 0.2)
+      push.qos                = OMQ::QoS.exactly_once(dead_letter_timeout: 0.05)
       push.linger             = 0
       push.reconnect_interval = 10.0 # do not reconnect during the test
       push.connect("tcp://127.0.0.1:#{port}")
@@ -61,7 +61,7 @@ describe "QoS 2 dead-letter" do
       # no ACK flows for "second" — it stays pinned to "server" in the
       # sender's PeerRegistry.
       p1 = push.send("second")
-      sleep 0.1
+      sleep 0.02
       refute p1.resolved?, "Promise should still be pending before peer disconnect"
 
       # Peer disappears → disconnected_at stamped → sweep expires entry.

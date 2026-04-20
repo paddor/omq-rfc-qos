@@ -8,7 +8,7 @@ describe "QoS 3 #each block threading" do
       pull = OMQ::PULL.new
       pull.identity    = "server"
       pull.qos         = OMQ::QoS.exactly_once_and_processed
-      pull.read_timeout = 0.2
+      pull.read_timeout = 0.05
       port = pull.bind("tcp://127.0.0.1:0").port
 
       push = OMQ::PUSH.new
@@ -38,7 +38,7 @@ describe "QoS 3 #each block threading" do
       pull = OMQ::PULL.new
       pull.identity    = "server"
       pull.qos         = OMQ::QoS.exactly_once_and_processed
-      pull.read_timeout = 0.3
+      pull.read_timeout = 0.1
       port = pull.bind("tcp://127.0.0.1:0").port
 
       push = OMQ::PUSH.new

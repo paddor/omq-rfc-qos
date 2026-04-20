@@ -38,7 +38,7 @@ describe "QoS 2 identity validation" do
       # Handshake should fail — neither side set identity or CURVE.
       # peer_connected never resolves.
       assert_raises(Async::TimeoutError) do
-        Async::Task.current.with_timeout(0.3) { push.peer_connected.wait }
+        Async::Task.current.with_timeout(0.1) { push.peer_connected.wait }
       end
     ensure
       push&.close

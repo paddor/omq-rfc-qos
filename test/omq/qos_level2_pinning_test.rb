@@ -34,10 +34,10 @@ describe "QoS 2 peer pinning" do
       # pending registry (B received + app-consumed, so B's slice is
       # ACK'd; A's slice is in-flight).
       received_b = []
-      pull_b.read_timeout = 0.5
+      pull_b.read_timeout = 0.1
       loop do
         received_b << pull_b.receive.first
-        break if received_b.size >= n / 2 + 1
+        break if received_b.size >= n / 2
       rescue IO::TimeoutError
         break
       end
@@ -47,7 +47,7 @@ describe "QoS 2 peer pinning" do
       pull_a = nil
 
       # Nothing further is delivered to B — QoS 2 does NOT failover.
-      pull_b.read_timeout = 0.3
+      pull_b.read_timeout = 0.1
       extra_on_b = []
       loop do
         extra_on_b << pull_b.receive.first

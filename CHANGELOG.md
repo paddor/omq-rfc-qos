@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1 — 2026-04-20
+
+### Changed
+
+- Test suite speedup (4.8s → 1.4s): tightened `read_timeout` and
+  `dead_letter_timeout` values in tests that exercise asynchrony,
+  and fixed two replay tests whose break conditions always fell
+  through to the timeout.
+
 ## 0.3.0 — 2026-04-20
 
 ### Added
