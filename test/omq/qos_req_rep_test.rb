@@ -45,17 +45,17 @@ describe "QoS 1 REQ/REP retry on disconnect" do
   it "re-sends to next REP when first drops" do
     Sync do
       rep1 = OMQ::REP.new
-      rep1.qos    = 1
+      rep1.qos = OMQ::QoS.at_least_once
       rep1.linger = 0
       port1 = rep1.bind("tcp://127.0.0.1:0").port
 
       rep2 = OMQ::REP.new
-      rep2.qos    = 1
+      rep2.qos = OMQ::QoS.at_least_once
       rep2.linger = 0
       port2 = rep2.bind("tcp://127.0.0.1:0").port
 
       req = OMQ::REQ.new
-      req.qos                = 1
+      req.qos = OMQ::QoS.at_least_once
       req.linger             = 1
       req.reconnect_interval = RECONNECT_INTERVAL
       req.connect("tcp://127.0.0.1:#{port1}")

@@ -4,7 +4,7 @@ require "xxhash"
 require "digest/sha1"
 
 module OMQ
-  module QoS
+  class QoS
     # Supported hash algorithms in default preference order.
     # x = XXH64 (8 bytes) — fast, requires xxhash library
     # s = SHA-1 truncated to 64 bits (8 bytes) — available in any standard library

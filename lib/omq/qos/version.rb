@@ -2,7 +2,7 @@
 
 module OMQ
   # Per-hop delivery guarantees (QoS) extension for OMQ sockets.
-  module QoS
-    VERSION = "0.2.0"
+  class QoS
+    VERSION = "0.3.0"
   end
 end

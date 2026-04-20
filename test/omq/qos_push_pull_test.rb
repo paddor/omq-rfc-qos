@@ -9,11 +9,11 @@ describe "QoS 1 PUSH/PULL" do
     it "sends and receives with ACK" do
       Sync do
         pull = OMQ::PULL.new
-        pull.qos = 1
+        pull.qos = OMQ::QoS.at_least_once
         pull.bind("inproc://qos1-pp-1")
 
         push = OMQ::PUSH.new
-        push.qos    = 1
+        push.qos = OMQ::QoS.at_least_once
         push.linger = 1
         push.connect("inproc://qos1-pp-1")
         wait_connected(push)
@@ -33,11 +33,11 @@ describe "QoS 1 PUSH/PULL" do
     it "delivers many messages reliably" do
       Sync do
         pull = OMQ::PULL.new
-        pull.qos = 1
+        pull.qos = OMQ::QoS.at_least_once
         pull.bind("inproc://qos1-pp-many")
 
         push = OMQ::PUSH.new
-        push.qos    = 1
+        push.qos = OMQ::QoS.at_least_once
         push.linger = 1
         push.connect("inproc://qos1-pp-many")
         wait_connected(push)
@@ -62,11 +62,11 @@ describe "QoS 1 PUSH/PULL" do
     it "sends and receives with ACK" do
       Sync do
         pull = OMQ::PULL.new
-        pull.qos = 1
+        pull.qos = OMQ::QoS.at_least_once
         port = pull.bind("tcp://127.0.0.1:0").port
 
         push = OMQ::PUSH.new
-        push.qos                = 1
+        push.qos = OMQ::QoS.at_least_once
         push.linger             = 1
         push.reconnect_interval = RECONNECT_INTERVAL
         push.connect("tcp://127.0.0.1:#{port}")
@@ -84,18 +84,18 @@ describe "QoS 1 PUSH/PULL" do
     it "replays multiple in-flight messages on connection loss" do
       Sync do
         pull1 = OMQ::PULL.new
-        pull1.qos      = 1
+        pull1.qos = OMQ::QoS.at_least_once
         pull1.recv_hwm = 1
         pull1.linger   = 0
         port1 = pull1.bind("tcp://127.0.0.1:0").port
 
         pull2 = OMQ::PULL.new
-        pull2.qos    = 1
+        pull2.qos = OMQ::QoS.at_least_once
         pull2.linger = 1
         port2 = pull2.bind("tcp://127.0.0.1:0").port
 
         push = OMQ::PUSH.new
-        push.qos                = 1
+        push.qos = OMQ::QoS.at_least_once
         push.linger             = 2
         push.reconnect_interval = RECONNECT_INTERVAL
         push.connect("tcp://127.0.0.1:#{port1}")
@@ -118,8 +118,13 @@ describe "QoS 1 PUSH/PULL" do
           break
         end
 
-        expected = (0...n).map { |i| "msg-#{i}" }
-        missing = expected - received
+        # QoS 1 ACKs after enqueue into the receiver's recv_queue. With
+        # recv_hwm=1, at most 1 message is enqueued and ACK'd before the
+        # recv pump blocks, so at most 1 message can be "stored but never
+        # consumed" when pull1 closes. The remaining n-1 stay un-ACK'd on
+        # the sender and replay to pull2.
+        expected = (1...n).map { |i| "msg-#{i}" }
+        missing  = expected - received
         assert missing.empty?, "missing from pull2: #{missing.inspect}, got: #{received.inspect}"
       ensure
         push&.close
@@ -135,7 +140,7 @@ describe "QoS 1 PUSH/PULL" do
         r.close
         Sync do
           pull = OMQ::PULL.new
-          pull.qos      = 1
+          pull.qos = OMQ::QoS.at_least_once
           pull.recv_hwm = 1
           w.puts pull.bind("tcp://127.0.0.1:0").port
           w.close
@@ -148,12 +153,12 @@ describe "QoS 1 PUSH/PULL" do
 
       Sync do
         backup = OMQ::PULL.new
-        backup.qos    = 1
+        backup.qos = OMQ::QoS.at_least_once
         backup.linger = 1
         backup_port = backup.bind("tcp://127.0.0.1:0").port
 
         push = OMQ::PUSH.new
-        push.qos                = 1
+        push.qos = OMQ::QoS.at_least_once
         push.linger             = 2
         push.reconnect_interval = RECONNECT_INTERVAL
         push.connect("tcp://127.0.0.1:#{child_port}")
@@ -177,8 +182,11 @@ describe "QoS 1 PUSH/PULL" do
           break
         end
 
-        expected = (0...n).map { |i| "k#{i}" }
-        missing = expected - received
+        # See comment on the graceful-close variant above — at most
+        # recv_hwm (=1) messages may be stored-but-never-consumed on
+        # the killed peer and thus not replay.
+        expected = (1...n).map { |i| "k#{i}" }
+        missing  = expected - received
         assert missing.empty?, "missing: #{missing.inspect}, got: #{received.inspect}"
       ensure
         push&.close
@@ -195,17 +203,17 @@ describe "QoS 1 PUSH/PULL" do
     it "retries to next PULL on disconnect" do
       Sync do
         pull1 = OMQ::PULL.new
-        pull1.qos    = 1
+        pull1.qos = OMQ::QoS.at_least_once
         pull1.linger = 0
         port1 = pull1.bind("tcp://127.0.0.1:0").port
 
         pull2 = OMQ::PULL.new
-        pull2.qos    = 1
+        pull2.qos = OMQ::QoS.at_least_once
         pull2.linger = 0
         port2 = pull2.bind("tcp://127.0.0.1:0").port
 
         push = OMQ::PUSH.new
-        push.qos                = 1
+        push.qos = OMQ::QoS.at_least_once
         push.linger             = 1
         push.reconnect_interval = RECONNECT_INTERVAL
         push.connect("tcp://127.0.0.1:#{port1}")

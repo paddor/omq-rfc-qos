@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module OMQ
-  module QoS
+  class QoS
     # Prepended onto OMQ::Engine::ConnectionLifecycle so that the
     # Protocol::ZMTP::Connection is built with this socket's QoS
     # metadata, and the peer's QoS properties are validated after the
@@ -41,40 +41,57 @@ module OMQ
 
 
     # Builds the READY-property metadata hash this socket should
-    # advertise based on its QoS configuration. Empty hash at QoS 0
-    # so the Connection sees no extras.
+    # advertise based on its QoS configuration. Empty hash at QoS 0 so
+    # the Connection sees no extras.
     #
     # @param options [OMQ::Options]
     # @return [Hash{String => String}]
     def self.handshake_metadata(options)
-      return {} unless options.qos > 0
-      meta = { "X-QoS" => options.qos.to_s }
-      meta["X-QoS-Hash"] = options.qos_hash unless options.qos_hash.empty?
+      qos = options.qos
+      return {} if qos.nil?
+      meta = { "X-QoS" => qos.level.to_s }
+      meta["X-QoS-Hash"] = qos.hash_algos unless qos.hash_algos.empty?
       meta
     end
 
 
+    # Validates the peer's READY properties against the local QoS
+    # configuration. At QoS >= 2 also asserts that the connection has a
+    # stable per-peer identity (CURVE pubkey or non-empty ZMQ_IDENTITY)
+    # — without one the {PeerRegistry} cannot pin pending messages
+    # across reconnects.
     def self.validate_handshake!(options, conn)
       props     = conn.peer_properties || {}
-      local_qos = options.qos
-      peer_qos  = (props["X-QoS"] || "0").to_i
+      qos       = options.qos
+      local_lvl = qos&.level || 0
+      peer_lvl  = (props["X-QoS"] || "0").to_i
 
-      if local_qos != peer_qos
+      if local_lvl != peer_lvl
         raise Protocol::ZMTP::Error,
-              "QoS mismatch: local=#{local_qos} peer=#{peer_qos}"
+              "QoS mismatch: local=#{local_lvl} peer=#{peer_lvl}"
       end
 
-      return unless local_qos >= 1
+      return if local_lvl == 0
 
-      local_hash = options.qos_hash
+      local_hash = qos.hash_algos
       peer_hash  = props["X-QoS-Hash"] || ""
-      return if local_hash.empty? || peer_hash.empty?
 
-      algo = local_hash.each_char.find { |c| peer_hash.include?(c) }
-      return if algo
+      unless local_hash.empty? || peer_hash.empty?
+        algo = local_hash.each_char.find { |c| peer_hash.include?(c) }
+        unless algo
+          raise Protocol::ZMTP::Error,
+                "QoS hash algorithm mismatch: local=#{local_hash.inspect} peer=#{peer_hash.inspect}"
+        end
+      end
 
-      raise Protocol::ZMTP::Error,
-            "QoS hash algorithm mismatch: local=#{local_hash.inspect} peer=#{peer_hash.inspect}"
+      return if local_lvl < 2
+
+      info = conn.peer_info
+      if info.nil? || (info.public_key.nil? && info.identity.empty?)
+        raise Protocol::ZMTP::Error,
+              "QoS #{local_lvl} requires a stable peer anchor " \
+              "(CURVE public key or non-empty ZMQ_IDENTITY)"
+      end
     end
   end
 end

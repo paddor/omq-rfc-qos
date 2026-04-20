@@ -52,6 +52,94 @@ intermediaries (brokers, proxies).
 * **Command-frame ACK/NACK.** Acknowledgments are ZMTP command frames, invisible
   to applications. They flow in the opposite direction to data messages.
 
+### Comparison to MQTT QoS 2
+
+**Dedup** (short for *deduplication*) is the receiver-side check that prevents
+the same logical message from being delivered to the application twice. At
+QoS >= 2, sender retransmits after connection loss can put the same message on
+the wire multiple times; the receiver must recognise the retransmit and drop
+it before it reaches the application. This requires the receiver to keep a
+small record — a *dedup set* — of the identifiers of messages it has already
+delivered.
+
+The protocol choice for QoS 2 therefore turns on two questions: what
+**identifier** is used as the dedup key, and when can the receiver **evict**
+an entry from the dedup set.
+
+MQTT's QoS 2 uses a **four-way handshake**: `PUBLISH` → `PUBREC` → `PUBREL` →
+`PUBCOMP`. The dedup key is a 16-bit **packet ID** chosen by the sender per
+session. Packet IDs are *scarce* — the 16-bit namespace gives a session at
+most 65 536 distinct outstanding IDs, and because the sender must pick IDs
+that are not already in use, each ID has to be **freed** (recycled) after the
+exchange completes. `PUBREL` is the sender's signal that the receiver may
+forget the packet ID; `PUBCOMP` confirms the release. Without the fourth leg
+the sender would not know when it is safe to reuse the ID, and the receiver
+would not know when it may evict its dedup entry.
+
+This specification uses a **three-way exchange** (`MESSAGE` → `ACK` → `CLR`)
+because the dedup key is the **content hash** of the message (XXH64 over the
+raw ZMTP wire bytes). Hashes are derived, not allocated, so there is no
+scarcity: a sender never "runs out of" hashes and never needs to reclaim one.
+Consequently the receiver does not need the sender's permission to evict a
+dedup entry — it can evict on local signals alone:
+
+* **TTL expiry.** Each dedup entry is stamped with the time it was added to
+  the set. A periodic sweep (running at half the configured `dedup_ttl`)
+  removes any entry whose age exceeds `dedup_ttl`. The TTL SHOULD be chosen
+  larger than the sender's `dead_letter_timeout`, so that by the time a
+  dedup entry is aged out the sender is guaranteed to have given up on
+  retransmitting it.
+* **HWM eviction.** The dedup set is bounded at `recv_hwm` entries;
+  inserting past the bound evicts the oldest entry first (FIFO).
+
+`CLR` is the fast-path complement to both local signals: the sender emits it
+after its own `ACK` processing so the receiver may drop the dedup entry
+*promptly* rather than waiting for the TTL sweep. It is not
+correctness-critical — a lost `CLR` only costs the memory of one dedup-set
+entry until the sweep runs.
+
+Dedup sets are **scoped per connection**: each peer has its own set, keyed by
+the post-handshake `PeerInfo` (CURVE public key or `ZMQ_IDENTITY`). Two
+different senders transmitting the same bytes to the same receiver do not
+collide — they hit separate dedup sets. Collision is only possible when the
+*same sender* transmits two distinct-but-byte-identical messages within the
+in-flight window.
+
+| Property               | MQTT QoS 2                     | ZMTP QoS 2 (this spec)           |
+|------------------------|--------------------------------|----------------------------------|
+| Dedup key              | 16-bit packet ID (per session) | 64-bit content hash (XXH64)      |
+| Dedup scope            | per session                    | per connection (peer-scoped)     |
+| Key scarcity           | High — namespace is 65 536, IDs must be recycled | None — hashes aren't allocated |
+| Explicit-release frame | `PUBREL` (required for correctness) | `CLR` (optional fast-path hint) |
+| Receiver frees entry   | on `PUBREL`                    | on `CLR`, TTL expiry, or HWM eviction |
+| Handshake legs         | 4                              | 3                                |
+
+The tradeoff of hash-based dedup is therefore narrow: within a single
+connection, two *distinct* messages with identical bytes that are both
+in flight within the dedup window will be conflated as duplicates. With an
+8-byte digest and a bounded in-flight window of `N` messages (typically
+`send_hwm`), the hash-collision probability is ≈ `N² / 2⁶⁵` — negligible in
+practice. The real concern is intentional byte-identical traffic: if the
+application sends two distinct logical events with the same payload (e.g.
+two separate "increment counter" commands) and expects both deliveries to
+be observed, the second will be silently dropped as a duplicate.
+
+This specification deliberately does **not** add a built-in nonce or
+sequence number to make every message unique on the wire. Doing so would
+duplicate work the application already does when it has uniqueness
+requirements, and penalise the common case where byte-identical payloads
+truly are duplicates (which is the whole point of dedup). Applications that
+need byte-identical messages to be treated as distinct events SHOULD
+include an application-level nonce in the payload itself — for example, a
+UUID frame, a monotonic counter, or a timestamp with sufficient resolution.
+The content hash then distinguishes them naturally. Applications that want
+no dedup at all MAY use QoS 1, where hashes serve only for `ACK` correlation
+and the receiver performs no dedup.
+
+QoS 3 layers application-level completion on top of this 3-way exchange by
+replacing `ACK` with `COMP` / `NACK` — an application-driven analogue of
+MQTT's `PUBCOMP`, with no corresponding `PUBREL` leg for the reasons above.
+
 ## QoS Levels
 
 | Level | Name                     | Guarantee                                                  |

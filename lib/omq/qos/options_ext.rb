@@ -1,20 +1,35 @@
 # frozen_string_literal: true
 
 module OMQ
-  module QoS
-    # Prepended onto OMQ::Options to add the +qos_hash+ attribute.
+  class QoS
+    # Prepended onto {OMQ::Options} once omq-qos is loaded. Changes the
+    # semantics of +Options#qos+ from "an Integer level" to "nil or an
+    # {OMQ::QoS} instance":
+    #
+    #   options.qos        # => nil     (QoS 0, default)
+    #   options.qos        # => <OMQ::QoS level=2 ...>
+    #   options.qos_level  # => 0, 1, 2, or 3 (convenience Integer)
+    #
+    # The Integer form is still accepted by callers that never loaded
+    # omq-qos — core omq keeps the Integer default. Once this extension
+    # is installed the default resets to +nil+.
     #
     module OptionsExt
-      # Initializes options with the default QoS hash algorithm preference.
-      #
-      # @param kwargs [Hash] forwarded to the original +Options#initialize+
       def initialize(**kwargs)
         super
-        @qos_hash = OMQ::QoS::SUPPORTED_HASH_ALGOS
+        @qos = nil
+      end
+
+
+      # Convenience: 0 / 1 / 2 / 3. nil-safe.
+      #
+      # @return [Integer]
+      def qos_level
+        @qos&.level || 0
       end
     end
   end
 end
 
+
 OMQ::Options.prepend(OMQ::QoS::OptionsExt)
-OMQ::Options.attr_accessor :qos_hash

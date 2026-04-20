@@ -7,10 +7,12 @@ Gem::Specification.new do |s|
   s.version  = OMQ::QoS::VERSION
   s.authors  = ["Patrik Wenger"]
   s.email    = ["paddor@gmail.com"]
-  s.summary  = "QoS delivery guarantees for OMQ — at-least-once with ACK/NACK"
+  s.summary  = "QoS delivery guarantees for OMQ — at-least-once, exactly-once, and processed"
   s.description = "Quality of Service plugin for the OMQ pure-Ruby ZeroMQ library. " \
-                  "Adds per-hop delivery guarantees (QoS 1: at-least-once) using " \
-                  "ACK/NACK command frames and xxHash message identification."
+                  "Adds per-hop delivery guarantees — QoS 1 (at-least-once), QoS 2 " \
+                  "(exactly-once with peer pinning and dedup), and QoS 3 (exactly-once " \
+                  "plus application-level COMP/NACK) — using ACK/NACK command frames " \
+                  "and xxHash message identification."
   s.homepage = "https://github.com/paddor/omq-qos"
   s.license  = "ISC"
 
@@ -18,6 +20,6 @@ Gem::Specification.new do |s|
 
   s.files = Dir["lib/**/*.rb", "README.md", "LICENSE"]
 
-  s.add_dependency "omq", "~> 0.21"
+  s.add_dependency "omq", "~> 0.25"
   s.add_dependency "xxhash"
 end

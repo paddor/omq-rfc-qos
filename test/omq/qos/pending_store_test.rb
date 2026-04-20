@@ -44,7 +44,9 @@ describe OMQ::QoS::PendingStore do
   it "blocks wait_for_slot when at capacity and unblocks on ack" do
     Sync do
       small = OMQ::QoS::PendingStore.new(capacity: 2)
+      small.wait_for_slot
       small.track("h1______", ["a"].freeze, conn_a)
+      small.wait_for_slot
       small.track("h2______", ["b"].freeze, conn_a)
 
       waited = false
@@ -66,7 +68,9 @@ describe OMQ::QoS::PendingStore do
   it "unblocks wait_for_slot when a connection drops" do
     Sync do
       small = OMQ::QoS::PendingStore.new(capacity: 2)
+      small.wait_for_slot
       small.track("h1______", ["a"].freeze, conn_a)
+      small.wait_for_slot
       small.track("h2______", ["b"].freeze, conn_a)
 
       task = Async do
@@ -82,9 +86,9 @@ describe OMQ::QoS::PendingStore do
 
 
   it "records sent_at timestamp" do
-    before = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    before = Async::Clock.now
     store.track("hashtime", ["ts"].freeze, conn_a)
-    after = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    after = Async::Clock.now
 
     entry = store.ack("hashtime")
     assert_operator entry.sent_at, :>=, before
